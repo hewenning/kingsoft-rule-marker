@@ -19,7 +19,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }, null, context.subscriptions);
 
-    // 初始加载时处理当前打开的文档
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor) {
         handleDocumentChange(activeEditor.document);
@@ -40,7 +39,6 @@ function handleDocumentChange(document: vscode.TextDocument) {
 
     const warnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } } = {};
 
-    // 遍历 AST 树找到被 @warning 标记的函数
     function visit(node: ts.Node) {
         if (ts.isFunctionDeclaration(node) && node.name) {
             const comments = ts.getLeadingCommentRanges(sourceFile.getFullText(), node.pos);
@@ -63,24 +61,32 @@ function handleDocumentChange(document: vscode.TextDocument) {
 
     visit(sourceFile);
 
-    // 查找整个工作区中的被警告标记的函数调用
-    vscode.workspace.findFiles('**/*.ts', '**/node_modules/**').then(files => {
-        console.log('Files found:', files);
-        files.forEach(file => {
-            vscode.workspace.openTextDocument(file).then(doc => {
-                const text = doc.getText();
-                for (const functionName in warnings) {
-                    const regex = new RegExp(`\\b${functionName}\\b`, 'g');
-                    let match;
-                    while (match = regex.exec(text)) {
-                        const startPos = doc.positionAt(match.index);
-                        const endPos = doc.positionAt(match.index + functionName.length);
-                        const range = new vscode.Range(startPos, endPos);
-                        warnings[functionName].usages.push(range);
-                    }
-                }
+    const globPatterns = [
+        'packages/client/**/*.ts',
+        'packages/common/**/*.ts',
+        'packages/dedicated-server/**/*.ts',
+        'packages/logic-server/**/*.ts'
+    ];
 
-                setDecorations(doc, warnings);
+    globPatterns.forEach(pattern => {
+        vscode.workspace.findFiles(pattern, '**/node_modules/**').then(files => {
+            console.log('Files found:', files);
+            files.forEach(file => {
+                vscode.workspace.openTextDocument(file).then(doc => {
+                    const text = doc.getText();
+                    for (const functionName in warnings) {
+                        const regex = new RegExp(`\\b${functionName}\\b`, 'g');
+                        let match;
+                        while (match = regex.exec(text)) {
+                            const startPos = doc.positionAt(match.index);
+                            const endPos = doc.positionAt(match.index + functionName.length);
+                            const range = new vscode.Range(startPos, endPos);
+                            warnings[functionName].usages.push(range);
+                        }
+                    }
+
+                    setDecorations(doc, warnings);
+                });
             });
         });
     });
