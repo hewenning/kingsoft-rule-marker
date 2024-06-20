@@ -106,7 +106,7 @@ function updateWarnings(localWarnings: { [key: string]: { range: vscode.Range, u
     });
 
     Object.keys(localWarnings).forEach(functionName => {
-        const regex = new RegExp(`\\b${functionName}(\\b`, 'g');
+        const regex = new RegExp(`\\b\\w*\\.?${functionName}\\s*(<[^>]*>)?\\s*\\(`, 'g');
         vscode.workspace.findFiles('packages/{client,common,dedicated-server,logic-server}/**/*.ts', '**/node_modules/**').then(files => {
             files.forEach(file => {
                 vscode.workspace.openTextDocument(file).then(doc => {
@@ -114,7 +114,7 @@ function updateWarnings(localWarnings: { [key: string]: { range: vscode.Range, u
                     let match;
                     while (match = regex.exec(text)) {
                         const startPos = doc.positionAt(match.index);
-                        const endPos = doc.positionAt(match.index + functionName.length);
+                        const endPos = doc.positionAt(match.index + match[0].length - 1);
                         const range = new vscode.Range(startPos, endPos);
                         warnings[functionName].usages.push(range);
                     }
@@ -127,12 +127,12 @@ function updateWarnings(localWarnings: { [key: string]: { range: vscode.Range, u
 function updateUsages(document: vscode.TextDocument) {
     const text = document.getText();
     Object.keys(warnings).forEach(functionName => {
-        const regex = new RegExp(`\\b${functionName}\\b`, 'g');
+        const regex = new RegExp(`\\b\\w*\\.?${functionName}\\s*<.*?>?\\s*\\(`, 'g');
         const usages: vscode.Range[] = [];
         let match;
         while (match = regex.exec(text)) {
             const startPos = document.positionAt(match.index);
-            const endPos = document.positionAt(match.index + functionName.length);
+            const endPos = document.positionAt(match.index + match[0].length - 1);
             const range = new vscode.Range(startPos, endPos);
             usages.push(range);
         }
