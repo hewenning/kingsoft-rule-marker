@@ -7,10 +7,11 @@ const scannedFiles: Set<string> = new Set();
 
 export function activate(context: vscode.ExtensionContext) {
     warningDecorationType = vscode.window.createTextEditorDecorationType({
-        color: 'red', // 将字体颜色变为红色
-        fontWeight: 'bold', // 加粗字体
-        overviewRulerColor: 'red',
+        color: 'orange', // 将字体颜色变为橙色
+        // fontWeight: 'bold', // 加粗字体
+        overviewRulerColor: 'orange',
         overviewRulerLane: vscode.OverviewRulerLane.Right,
+        textDecoration: 'underline dashed orange', // 将虚线改为橙色
     });
 
     vscode.workspace.onDidOpenTextDocument(handleDocumentChange, null, context.subscriptions);
