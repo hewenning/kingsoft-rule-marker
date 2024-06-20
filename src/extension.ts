@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as ts from 'typescript';
 
 let warningDecorationType: vscode.TextEditorDecorationType;
+const warnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } } = {};
+const scannedFiles: Set<string> = new Set();
 
 export function activate(context: vscode.ExtensionContext) {
     warningDecorationType = vscode.window.createTextEditorDecorationType({
@@ -19,10 +21,33 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }, null, context.subscriptions);
 
+    // 初次激活时扫描所有需要的文件
+    initializeScan();
+
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor) {
         handleDocumentChange(activeEditor.document);
     }
+}
+
+function initializeScan() {
+    const globPatterns = [
+        'packages/client/**/*.ts',
+        'packages/common/**/*.ts',
+        'packages/dedicated-server/**/*.ts',
+        'packages/logic-server/**/*.ts'
+    ];
+
+    globPatterns.forEach(pattern => {
+        vscode.workspace.findFiles(pattern, '**/node_modules/**').then(files => {
+            files.forEach(file => {
+                scannedFiles.add(file.fsPath);
+                vscode.workspace.openTextDocument(file).then(doc => {
+                    analyzeDocument(doc);
+                });
+            });
+        });
+    });
 }
 
 function handleDocumentChange(document: vscode.TextDocument) {
@@ -30,6 +55,15 @@ function handleDocumentChange(document: vscode.TextDocument) {
         return;
     }
 
+    if (!scannedFiles.has(document.fileName)) {
+        analyzeDocument(document);
+        scannedFiles.add(document.fileName);
+    } else {
+        updateUsages(document);
+    }
+}
+
+function analyzeDocument(document: vscode.TextDocument) {
     const sourceFile = ts.createSourceFile(
         document.fileName,
         document.getText(),
@@ -37,7 +71,7 @@ function handleDocumentChange(document: vscode.TextDocument) {
         true
     );
 
-    const warnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } } = {};
+    const localWarnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } } = {};
 
     function visit(node: ts.Node) {
         if (ts.isFunctionDeclaration(node) && node.name) {
@@ -51,7 +85,7 @@ function handleDocumentChange(document: vscode.TextDocument) {
                             document.positionAt(node.getStart(sourceFile)),
                             document.positionAt(node.getEnd())
                         );
-                        warnings[functionName] = { range: range, usages: [] };
+                        localWarnings[functionName] = { range: range, usages: [] };
                     }
                 }
             }
@@ -60,45 +94,61 @@ function handleDocumentChange(document: vscode.TextDocument) {
     }
 
     visit(sourceFile);
+    updateWarnings(localWarnings);
+    updateDecorations(document);
+}
 
-    const globPatterns = [
-        'packages/client/**/*.ts',
-        'packages/common/**/*.ts',
-        'packages/dedicated-server/**/*.ts',
-        'packages/logic-server/**/*.ts'
-    ];
+function updateWarnings(localWarnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } }) {
+    Object.keys(localWarnings).forEach(functionName => {
+        if (!(functionName in warnings)) {
+            warnings[functionName] = localWarnings[functionName];
+        }
+    });
 
-    globPatterns.forEach(pattern => {
-        vscode.workspace.findFiles(pattern, '**/node_modules/**').then(files => {
-            console.log('Files found:', files);
+    Object.keys(localWarnings).forEach(functionName => {
+        const regex = new RegExp(`\\b${functionName}\\b`, 'g');
+        vscode.workspace.findFiles('packages/{client,common,dedicated-server,logic-server}/**/*.ts', '**/node_modules/**').then(files => {
             files.forEach(file => {
                 vscode.workspace.openTextDocument(file).then(doc => {
                     const text = doc.getText();
-                    for (const functionName in warnings) {
-                        const regex = new RegExp(`\\b${functionName}\\b`, 'g');
-                        let match;
-                        while (match = regex.exec(text)) {
-                            const startPos = doc.positionAt(match.index);
-                            const endPos = doc.positionAt(match.index + functionName.length);
-                            const range = new vscode.Range(startPos, endPos);
-                            warnings[functionName].usages.push(range);
-                        }
+                    let match;
+                    while (match = regex.exec(text)) {
+                        const startPos = doc.positionAt(match.index);
+                        const endPos = doc.positionAt(match.index + functionName.length);
+                        const range = new vscode.Range(startPos, endPos);
+                        warnings[functionName].usages.push(range);
                     }
-
-                    setDecorations(doc, warnings);
                 });
             });
         });
     });
 }
 
-function setDecorations(document: vscode.TextDocument, warnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } }) {
+function updateUsages(document: vscode.TextDocument) {
+    const text = document.getText();
+    Object.keys(warnings).forEach(functionName => {
+        const regex = new RegExp(`\\b${functionName}\\b`, 'g');
+        const usages: vscode.Range[] = [];
+        let match;
+        while (match = regex.exec(text)) {
+            const startPos = document.positionAt(match.index);
+            const endPos = document.positionAt(match.index + functionName.length);
+            const range = new vscode.Range(startPos, endPos);
+            usages.push(range);
+        }
+        warnings[functionName].usages = usages;
+    });
+
+    updateDecorations(document);
+}
+
+function updateDecorations(document: vscode.TextDocument) {
     const editor = vscode.window.visibleTextEditors.find(e => e.document.fileName === document.fileName);
     if (editor) {
         const decorations: vscode.DecorationOptions[] = [];
-        for (const functionName in warnings) {
+        Object.keys(warnings).forEach(functionName => {
             decorations.push(...warnings[functionName].usages.map(range => ({ range })));
-        }
+        });
         editor.setDecorations(warningDecorationType, decorations);
     }
 }
