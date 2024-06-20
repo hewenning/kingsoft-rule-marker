@@ -1,26 +1,104 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import * as ts from 'typescript';
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+let warningDecorationType: vscode.TextEditorDecorationType;
+
 export function activate(context: vscode.ExtensionContext) {
+    warningDecorationType = vscode.window.createTextEditorDecorationType({
+        color: 'red', // 将字体颜色变为红色
+        fontWeight: 'bold', // 加粗字体
+        overviewRulerColor: 'red',
+        overviewRulerLane: vscode.OverviewRulerLane.Right,
+    });
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "kingsoft-rule-marker" is now active!');
+    vscode.workspace.onDidOpenTextDocument(handleDocumentChange, null, context.subscriptions);
+    vscode.workspace.onDidChangeTextDocument(event => handleDocumentChange(event.document), null, context.subscriptions);
+    vscode.window.onDidChangeActiveTextEditor(editor => {
+        if (editor) {
+            handleDocumentChange(editor.document);
+        }
+    }, null, context.subscriptions);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('kingsoft-rule-marker.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from Kingsoft Rule Marker!');
-	});
-
-	context.subscriptions.push(disposable);
+    // 初始加载时处理当前打开的文档
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor) {
+        handleDocumentChange(activeEditor.document);
+    }
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {}
+function handleDocumentChange(document: vscode.TextDocument) {
+    if (document.languageId !== 'typescript') {
+        return;
+    }
+
+    const sourceFile = ts.createSourceFile(
+        document.fileName,
+        document.getText(),
+        ts.ScriptTarget.Latest,
+        true
+    );
+
+    const warnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } } = {};
+
+    // 遍历 AST 树找到被 @warning 标记的函数
+    function visit(node: ts.Node) {
+        if (ts.isFunctionDeclaration(node) && node.name) {
+            const comments = ts.getLeadingCommentRanges(sourceFile.getFullText(), node.pos);
+            if (comments) {
+                for (const comment of comments) {
+                    const commentText = sourceFile.getFullText().substring(comment.pos, comment.end);
+                    if (commentText.includes('@warning')) {
+                        const functionName = node.name.getText(sourceFile);
+                        const range = new vscode.Range(
+                            document.positionAt(node.getStart(sourceFile)),
+                            document.positionAt(node.getEnd())
+                        );
+                        warnings[functionName] = { range: range, usages: [] };
+                    }
+                }
+            }
+        }
+        ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+
+    // 查找整个工作区中的被警告标记的函数调用
+    vscode.workspace.findFiles('**/*.ts', '**/node_modules/**').then(files => {
+        console.log('Files found:', files);
+        files.forEach(file => {
+            vscode.workspace.openTextDocument(file).then(doc => {
+                const text = doc.getText();
+                for (const functionName in warnings) {
+                    const regex = new RegExp(`\\b${functionName}\\b`, 'g');
+                    let match;
+                    while (match = regex.exec(text)) {
+                        const startPos = doc.positionAt(match.index);
+                        const endPos = doc.positionAt(match.index + functionName.length);
+                        const range = new vscode.Range(startPos, endPos);
+                        warnings[functionName].usages.push(range);
+                    }
+                }
+
+                setDecorations(doc, warnings);
+            });
+        });
+    });
+}
+
+function setDecorations(document: vscode.TextDocument, warnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } }) {
+    const editor = vscode.window.visibleTextEditors.find(e => e.document.fileName === document.fileName);
+    if (editor) {
+        const decorations: vscode.DecorationOptions[] = [];
+        for (const functionName in warnings) {
+            decorations.push(...warnings[functionName].usages.map(range => ({ range })));
+        }
+        editor.setDecorations(warningDecorationType, decorations);
+    }
+}
+
+export function deactivate() {
+    if (warningDecorationType) {
+        warningDecorationType.dispose();
+    }
+}
