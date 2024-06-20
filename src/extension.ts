@@ -106,7 +106,7 @@ function updateWarnings(localWarnings: { [key: string]: { range: vscode.Range, u
     });
 
     Object.keys(localWarnings).forEach(functionName => {
-        const regex = new RegExp(`\\b${functionName}\\b`, 'g');
+        const regex = new RegExp(`\\b${functionName}(\\b`, 'g');
         vscode.workspace.findFiles('packages/{client,common,dedicated-server,logic-server}/**/*.ts', '**/node_modules/**').then(files => {
             files.forEach(file => {
                 vscode.workspace.openTextDocument(file).then(doc => {
