@@ -3,7 +3,7 @@
   "displayName": "Kingsoft Rule Marker",
   "description": "A extension that highlights code based on custom comment tags, enhancing code readability and maintainability.",
   "publisher": "ks-hewenning",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "engines": {
     "vscode": "^1.60.0"
   },

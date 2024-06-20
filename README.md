@@ -22,6 +22,10 @@ This is a Visual Studio Code extension that highlights usage of functions marked
 
 ## Release Notes
 
+### 0.1.4
+
+- Optimization function.
+
 ### 0.1.3
 
 - Optimization function.

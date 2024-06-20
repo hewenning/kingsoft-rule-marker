@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as ts from 'typescript';
+import * as path from 'path';
 
 let warningDecorationType: vscode.TextEditorDecorationType;
 const warnings: { [key: string]: { range: vscode.Range, usages: vscode.Range[] } } = {};
@@ -31,25 +32,33 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function initializeScan() {
-    const globPatterns = [
-        'packages/client/**/*.ts',
-        'packages/common/**/*.ts',
-        'packages/dedicated-server/**/*.ts',
-        'packages/logic-server/**/*.ts'
-    ];
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+        return;
+    }
 
-    for (const pattern of globPatterns) {
-        vscode.workspace.findFiles(pattern, '**/node_modules/**').then(files => {
-            files.forEach(file => {
-                if (!scannedFiles.has(file.fsPath)) {
-                    scannedFiles.add(file.fsPath);
-                    vscode.workspace.openTextDocument(file).then(doc => {
-                        analyzeDocument(doc);
-                    });
-                }
+    workspaceFolders.forEach(folder => {
+        const workspaceRoot = folder.uri.fsPath;
+        const globPatterns = [
+            new vscode.RelativePattern(path.join(workspaceRoot, '../packages/client'), '**/*.ts'),
+            new vscode.RelativePattern(path.join(workspaceRoot, '../packages/common'), '**/*.ts'),
+            new vscode.RelativePattern(path.join(workspaceRoot, '../packages/dedicated-server'), '**/*.ts'),
+            new vscode.RelativePattern(path.join(workspaceRoot, '../packages/logic-server'), '**/*.ts')
+        ];
+
+        globPatterns.forEach(pattern => {
+            vscode.workspace.findFiles(pattern, '**/node_modules/**').then(files => {
+                files.forEach(file => {
+                    if (!scannedFiles.has(file.fsPath)) {
+                        scannedFiles.add(file.fsPath);
+                        vscode.workspace.openTextDocument(file).then(doc => {
+                            analyzeDocument(doc);
+                        });
+                    }
+                });
             });
         });
-    }
+    });
 }
 
 function handleDocumentChange(document: vscode.TextDocument) {
