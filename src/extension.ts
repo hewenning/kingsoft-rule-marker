@@ -8,7 +8,6 @@ const scannedFiles: Set<string> = new Set();
 export function activate(context: vscode.ExtensionContext) {
     warningDecorationType = vscode.window.createTextEditorDecorationType({
         color: 'orange', // 将字体颜色变为橙色
-        // fontWeight: 'bold', // 加粗字体
         overviewRulerColor: 'orange',
         overviewRulerLane: vscode.OverviewRulerLane.Right,
         textDecoration: 'underline dashed orange', // 将虚线改为橙色
@@ -22,13 +21,13 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }, null, context.subscriptions);
 
-    // 初次激活时扫描所有需要的文件
-    initializeScan();
-
     const activeEditor = vscode.window.activeTextEditor;
     if (activeEditor) {
         handleDocumentChange(activeEditor.document);
     }
+
+    // 同步初次激活时扫描所有需要的文件
+    initializeScan();
 }
 
 function initializeScan() {
@@ -39,16 +38,18 @@ function initializeScan() {
         'packages/logic-server/**/*.ts'
     ];
 
-    globPatterns.forEach(pattern => {
+    for (const pattern of globPatterns) {
         vscode.workspace.findFiles(pattern, '**/node_modules/**').then(files => {
             files.forEach(file => {
-                scannedFiles.add(file.fsPath);
-                vscode.workspace.openTextDocument(file).then(doc => {
-                    analyzeDocument(doc);
-                });
+                if (!scannedFiles.has(file.fsPath)) {
+                    scannedFiles.add(file.fsPath);
+                    vscode.workspace.openTextDocument(file).then(doc => {
+                        analyzeDocument(doc);
+                    });
+                }
             });
         });
-    });
+    }
 }
 
 function handleDocumentChange(document: vscode.TextDocument) {
@@ -96,6 +97,7 @@ function analyzeDocument(document: vscode.TextDocument) {
 
     visit(sourceFile);
     updateWarnings(localWarnings);
+    updateAllUsages(document);
     updateDecorations(document);
 }
 
@@ -105,24 +107,24 @@ function updateWarnings(localWarnings: { [key: string]: { range: vscode.Range, u
             warnings[functionName] = localWarnings[functionName];
         }
     });
+}
 
-    Object.keys(localWarnings).forEach(functionName => {
-        const regex = new RegExp(`\\b\\w*\\.?${functionName}\\s*(<[^>]*>)?\\s*\\(`, 'g');
-        vscode.workspace.findFiles('packages/{client,common,dedicated-server,logic-server}/**/*.ts', '**/node_modules/**').then(files => {
-            files.forEach(file => {
-                vscode.workspace.openTextDocument(file).then(doc => {
-                    const text = doc.getText();
-                    let match;
-                    while (match = regex.exec(text)) {
-                        const startPos = doc.positionAt(match.index);
-                        const endPos = doc.positionAt(match.index + match[0].length - 1);
-                        const range = new vscode.Range(startPos, endPos);
-                        warnings[functionName].usages.push(range);
-                    }
-                });
-            });
-        });
+function updateAllUsages(document: vscode.TextDocument) {
+    const text = document.getText();
+    Object.keys(warnings).forEach(functionName => {
+        const regex = new RegExp(`\\b\\w*\\.?${functionName}\\s*<.*?>?\\s*\\(`, 'g');
+        const usages: vscode.Range[] = [];
+        let match;
+        while (match = regex.exec(text)) {
+            const startPos = document.positionAt(match.index);
+            const endPos = document.positionAt(match.index + match[0].length - 1);
+            const range = new vscode.Range(startPos, endPos);
+            usages.push(range);
+        }
+        warnings[functionName].usages = usages;
     });
+
+    updateDecorations(document);
 }
 
 function updateUsages(document: vscode.TextDocument) {
