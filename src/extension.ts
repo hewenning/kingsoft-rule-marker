@@ -96,7 +96,9 @@ function analyzeDocument(document: vscode.TextDocument) {
                             document.positionAt(node.getStart(sourceFile)),
                             document.positionAt(node.getEnd())
                         );
-                        localWarnings[functionName] = { range: range, usages: [] };
+                        if (!(functionName in localWarnings)) {
+                            localWarnings[functionName] = { range: range, usages: [] };
+                        }
                     }
                 }
             }
@@ -114,6 +116,8 @@ function updateWarnings(localWarnings: { [key: string]: { range: vscode.Range, u
     Object.keys(localWarnings).forEach(functionName => {
         if (!(functionName in warnings)) {
             warnings[functionName] = localWarnings[functionName];
+        } else {
+            warnings[functionName].range = localWarnings[functionName].range;
         }
     });
 }
@@ -121,7 +125,7 @@ function updateWarnings(localWarnings: { [key: string]: { range: vscode.Range, u
 function updateAllUsages(document: vscode.TextDocument) {
     const text = document.getText();
     Object.keys(warnings).forEach(functionName => {
-        const regex = new RegExp(`\\b\\w*\\.?${functionName}\\s*<.*?>?\\s*\\(`, 'g');
+        const regex = new RegExp(`\\b\\w*\\.?${functionName}\\s*(<[^>]*>)?\\s*\\(`, 'g')
         const usages: vscode.Range[] = [];
         let match;
         while (match = regex.exec(text)) {
@@ -139,7 +143,7 @@ function updateAllUsages(document: vscode.TextDocument) {
 function updateUsages(document: vscode.TextDocument) {
     const text = document.getText();
     Object.keys(warnings).forEach(functionName => {
-        const regex = new RegExp(`\\b\\w*\\.?${functionName}\\s*<.*?>?\\s*\\(`, 'g');
+        const regex = new RegExp(`\\b\\w*\\.?${functionName}\\s*(<[^>]*>)?\\s*\\(`, 'g')
         const usages: vscode.Range[] = [];
         let match;
         while (match = regex.exec(text)) {
